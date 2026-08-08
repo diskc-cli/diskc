@@ -13,7 +13,7 @@ go build -o diskc ./cmd/diskc
 ./diskc
 ```
 
-The default command scans `/`, samples growth for three seconds, and reports filesystem pressure, largest files/directories, growth rate, estimated time-to-full, writable processes, and deleted-open files.
+The default command scans `/`, samples growth for three seconds, and reports filesystem pressure, largest files/directories, growth rate, estimated time-to-full, and writable processes. Add `--deleted` to include deleted-open file detection.
 
 `diskc` is read-only and does not require `sudo` or root privileges. Linux `/proc` permissions may limit process details for other users.
 
