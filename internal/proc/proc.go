@@ -40,8 +40,10 @@ func AttributeWriters(files []disk.File) {
 		if err != nil {
 			continue
 		}
-		writer := writerInfo(pid)
 		for _, fd := range fds {
+			if !writableDescriptor(pid, fd.Name()) {
+				continue
+			}
 			id, err := fileIdentity(filepath.Join("/proc", entry.Name(), "fd", fd.Name()))
 			if err != nil {
 				continue
@@ -51,7 +53,7 @@ func AttributeWriters(files []disk.File) {
 					seen[id] = make(map[int]bool)
 				}
 				if !seen[id][pid] {
-					files[fileIndex].Writers = append(files[fileIndex].Writers, writer)
+					files[fileIndex].Writers = append(files[fileIndex].Writers, writerInfo(pid))
 					seen[id][pid] = true
 				}
 			}
@@ -129,7 +131,42 @@ func writerInfo(pid int) disk.Writer {
 	name := readFirstLine(filepath.Join("/proc", strconv.Itoa(pid), "comm"))
 	exe, _ := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "exe"))
 	uid := processUID(pid)
-	return disk.Writer{PID: pid, Process: name, Exe: exe, UID: uid}
+	return disk.Writer{PID: pid, Process: name, Exe: exe, UID: uid, Service: serviceName(pid)}
+}
+
+func serviceName(pid int) string {
+	file, err := os.Open(filepath.Join("/proc", strconv.Itoa(pid), "cgroup"))
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		for _, part := range strings.Split(scanner.Text(), "/") {
+			if strings.HasSuffix(part, ".service") {
+				return part
+			}
+		}
+	}
+	return ""
+}
+
+func writableDescriptor(pid int, fd string) bool {
+	file, err := os.Open(filepath.Join("/proc", strconv.Itoa(pid), "fdinfo", fd))
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) != 2 || fields[0] != "flags:" {
+			continue
+		}
+		flags, err := strconv.ParseUint(fields[1], 8, 32)
+		return err == nil && flags&3 != 0
+	}
+	return false
 }
 
 func processUID(pid int) string {

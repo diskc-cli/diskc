@@ -18,12 +18,30 @@ type Data struct {
 }
 
 func Print(writer io.Writer, data Data, jsonOutput bool) error {
+	return PrintMany(writer, []Data{data}, jsonOutput)
+}
+
+func PrintMany(writer io.Writer, data []Data, jsonOutput bool) error {
 	if jsonOutput {
 		encoder := json.NewEncoder(writer)
 		encoder.SetIndent("", "  ")
+		if len(data) == 1 {
+			return encoder.Encode(data[0])
+		}
 		return encoder.Encode(data)
 	}
-	return text(writer, data)
+	for index, item := range data {
+		if len(data) > 1 {
+			if index > 0 {
+				fmt.Fprintln(writer)
+			}
+			fmt.Fprintf(writer, "===== %s =====\n", item.Filesystem.Path)
+		}
+		if err := text(writer, item); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func text(writer io.Writer, data Data) error {
@@ -34,7 +52,14 @@ func text(writer io.Writer, data Data) error {
 		pressure = "WARNING"
 	}
 	fmt.Fprintf(writer, "Disk pressure: %s  %.1f%% used (%s free)\n", pressure, data.Filesystem.UsedPercent, formatBytes(data.Filesystem.FreeBytes))
-	fmt.Fprintf(writer, "Inodes: %.1f%% used  |  %s\n\n", data.Filesystem.InodePercent, data.Filesystem.Path)
+	fmt.Fprintf(writer, "Inodes: %.1f%% used  |  %s\n", data.Filesystem.InodePercent, data.Filesystem.Path)
+	if data.Filesystem.GrowthBytesPerSecond > 0 {
+		fmt.Fprintf(writer, "Trend: +%s/hour\n", formatBytes(uint64(data.Filesystem.GrowthBytesPerSecond*3600)))
+		if data.Filesystem.FullInSeconds > 0 {
+			fmt.Fprintf(writer, "Estimated filesystem full: ~%s\n", duration(data.Filesystem.FullInSeconds))
+		}
+	}
+	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "Largest files")
 	for _, file := range data.Files {
 		growth := ""
@@ -51,6 +76,32 @@ func text(writer io.Writer, data Data) error {
 		fmt.Fprintln(writer, "\nLargest directories")
 		for _, directory := range data.Directories {
 			fmt.Fprintf(writer, "%10s  %s\n", formatBytes(uint64(directory.Size)), directory.Path)
+		}
+	}
+	if hasWriters(data.Files) {
+		fmt.Fprintln(writer, "\nActive writers")
+		for _, file := range data.Files {
+			for _, processWriter := range file.Writers {
+				fmt.Fprintf(writer, "%s\n└─ PID %d  %s\n", file.Path, processWriter.PID, processWriter.Process)
+				if processWriter.Exe != "" {
+					fmt.Fprintf(writer, "   ├─ exe      %s\n", processWriter.Exe)
+				}
+				if processWriter.Service != "" {
+					fmt.Fprintf(writer, "   └─ service  %s\n", processWriter.Service)
+				}
+			}
+		}
+	}
+	if hasGrowth(data.Files) {
+		fmt.Fprintln(writer, "\nPotential issues")
+		for _, file := range data.Files {
+			if file.Growth <= 0 {
+				continue
+			}
+			fmt.Fprintf(writer, "%s\n├─ rapid growth: %s/hour\n", file.Path, formatBytes(uint64(file.Growth*3600)))
+			if data.Filesystem.FullInSeconds > 0 {
+				fmt.Fprintf(writer, "└─ filesystem full in ~%s\n", duration(data.Filesystem.FullInSeconds))
+			}
 		}
 	}
 	if len(data.Deleted) > 0 {
@@ -91,4 +142,30 @@ func abs(value float64) float64 {
 		return -value
 	}
 	return value
+}
+
+func hasWriters(files []disk.File) bool {
+	for _, file := range files {
+		if len(file.Writers) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func hasGrowth(files []disk.File) bool {
+	for _, file := range files {
+		if file.Growth > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func duration(seconds float64) string {
+	minutes := int(seconds / 60)
+	if minutes < 60 {
+		return fmt.Sprintf("%d minutes", minutes)
+	}
+	return fmt.Sprintf("%d hours %d minutes", minutes/60, minutes%60)
 }

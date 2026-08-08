@@ -11,13 +11,15 @@ import (
 )
 
 type Filesystem struct {
-	Path         string  `json:"path"`
-	Device       uint64  `json:"-"`
-	TotalBytes   uint64  `json:"total_bytes"`
-	UsedBytes    uint64  `json:"used_bytes"`
-	FreeBytes    uint64  `json:"free_bytes"`
-	UsedPercent  float64 `json:"used_percent"`
-	InodePercent float64 `json:"inode_percent"`
+	Path                 string  `json:"path"`
+	Device               uint64  `json:"-"`
+	TotalBytes           uint64  `json:"total_bytes"`
+	UsedBytes            uint64  `json:"used_bytes"`
+	FreeBytes            uint64  `json:"free_bytes"`
+	UsedPercent          float64 `json:"used_percent"`
+	InodePercent         float64 `json:"inode_percent"`
+	GrowthBytesPerSecond float64 `json:"growth_bytes_per_second,omitempty"`
+	FullInSeconds        float64 `json:"full_in_seconds,omitempty"`
 }
 
 type File struct {
@@ -38,6 +40,7 @@ type Writer struct {
 	Process string `json:"process"`
 	Exe     string `json:"exe"`
 	UID     string `json:"uid"`
+	Service string `json:"service,omitempty"`
 }
 
 func FilesystemUsage(path string) (Filesystem, error) {
@@ -159,6 +162,19 @@ func MeasureGrowth(files []File, interval time.Duration) error {
 		return files[i].Growth > files[j].Growth
 	})
 	return nil
+}
+
+func UpdateTrend(files []File, filesystem *Filesystem) {
+	var growth float64
+	for _, file := range files {
+		if file.Growth > 0 {
+			growth += file.Growth
+		}
+	}
+	filesystem.GrowthBytesPerSecond = growth
+	if growth > 0 {
+		filesystem.FullInSeconds = float64(filesystem.FreeBytes) / growth
+	}
 }
 
 func deviceOf(path string) (uint64, error) {

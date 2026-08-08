@@ -9,11 +9,13 @@ It combines the incident workflow behind `df`, `df -i`, `du`, `find`, `lsof`, `/
 - Reports byte pressure and inode pressure.
 - Ranks large files and directories without crossing filesystem boundaries.
 - Measures growth rate over a sampling window.
+- Projects when the filesystem will fill at the observed growth rate.
 - Attributes open files to processes through `/proc/<pid>/fd`.
 - Finds deleted files still held open by processes.
 - Classifies logs, temporary/cache files, archives, and core dumps.
 - Works without sudo or root; inaccessible data is skipped with warnings.
 - Supports human-readable and JSON output.
+- Supports multiple explicit mount points or automatic physical-mount discovery.
 
 ## Install
 
@@ -83,9 +85,23 @@ Largest directories
 
 The default path is `/`. Focus a scan with `diskc /var` or `diskc /data --top 50 --depth 6`.
 
+Inspect multiple filesystems in one run:
+
+```bash
+./diskc / /data /backup --sample 5s
+```
+
+Discover all physical filesystems listed by Linux mount information:
+
+```bash
+./diskc --all --sample 5s
+```
+
+Virtual filesystems such as `/proc`, `/sys`, `tmpfs`, and cgroups are excluded. Separate filesystem results are never mixed. Text output is separated by mount point; `--json` emits a JSON array when multiple filesystems are inspected.
+
 ### Find growing files and writers
 
-`--sample` accepts Go duration syntax. It scans the largest files, waits, and measures them again:
+The default command samples for three seconds. `--sample` accepts Go duration syntax when you want a different window:
 
 ```text
 $ diskc /var --top 10 --sample 5s
@@ -94,7 +110,7 @@ Largest files
    31.6 GB  /var/log/nginx/access.log  (log)  ↑ 4.1 MB/s  [1 writer(s)]
 ```
 
-At `18.2 MB/s`, the payment log grows about `1.1 GB/minute` or `65.5 GB/hour`.
+At `18.2 MB/s`, the payment log grows about `1.1 GB/minute` or `65.5 GB/hour`. The report also shows the aggregate trend and estimated time to full when the measured files account for positive growth.
 
 ### Find deleted-but-open files
 
@@ -143,9 +159,10 @@ Example shape:
 ```text
 --top N             number of large files (default: 20)
 --depth N           maximum directory depth (default: 4)
---sample DURATION   measure growth, for example 5s or 1m
+--sample DURATION   measure growth (default: 3s; use 0 to disable)
 --deleted           include deleted files held open by processes
 --json              emit machine-readable JSON
+--all               inspect all mounted physical filesystems
 ```
 
 ## Development
