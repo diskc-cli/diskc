@@ -175,3 +175,9 @@ GOOS=linux GOARCH=amd64 go build -o diskc-linux ./cmd/diskc
 ```
 
 The project uses only the Go standard library. Linux builds use filesystem statistics and `/proc` metadata.
+
+## Disclaimer
+
+Parts of this project, including source code, documentation, examples, and configuration, may be generated or assisted by artificial intelligence. The project is provided on an “AS IS” and “AS AVAILABLE” basis, without warranties of any kind.
+
+Use `diskc` at your own risk. The authors, maintainers, contributors, and distributors are not liable for any damage, data loss, corruption, downtime, outage, security incident, or other loss arising from the use of all or any part of this project. Review, test, and validate the code and its output before using it in production. `diskc` is diagnostic and read-only, but users remain responsible for the commands and operational decisions they make based on its output.
