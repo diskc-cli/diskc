@@ -1,0 +1,162 @@
+package proc
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+
+	"github.com/diskc/diskc/internal/disk"
+)
+
+type DeletedFile struct {
+	Path    string        `json:"path"`
+	Size    int64         `json:"size_bytes"`
+	Writers []disk.Writer `json:"writers"`
+}
+
+func AttributeWriters(files []disk.File) {
+	byIdentity := make(map[identity][]int)
+	for index := range files {
+		id, err := fileIdentity(files[index].Path)
+		if err == nil {
+			byIdentity[id] = append(byIdentity[id], index)
+		}
+	}
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return
+	}
+	seen := make(map[identity]map[int]bool)
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || !entry.IsDir() {
+			continue
+		}
+		fds, err := os.ReadDir(filepath.Join("/proc", entry.Name(), "fd"))
+		if err != nil {
+			continue
+		}
+		writer := writerInfo(pid)
+		for _, fd := range fds {
+			id, err := fileIdentity(filepath.Join("/proc", entry.Name(), "fd", fd.Name()))
+			if err != nil {
+				continue
+			}
+			for _, fileIndex := range byIdentity[id] {
+				if seen[id] == nil {
+					seen[id] = make(map[int]bool)
+				}
+				if !seen[id][pid] {
+					files[fileIndex].Writers = append(files[fileIndex].Writers, writer)
+					seen[id][pid] = true
+				}
+			}
+		}
+	}
+}
+
+func DeletedFiles() []DeletedFile {
+	type retained struct {
+		file DeletedFile
+		id   identity
+	}
+	files := make(map[identity]*retained)
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || !entry.IsDir() {
+			continue
+		}
+		fds, err := os.ReadDir(filepath.Join("/proc", entry.Name(), "fd"))
+		if err != nil {
+			continue
+		}
+		writer := writerInfo(pid)
+		for _, fd := range fds {
+			fdPath := filepath.Join("/proc", entry.Name(), "fd", fd.Name())
+			target, err := os.Readlink(fdPath)
+			if err != nil || !strings.HasSuffix(target, " (deleted)") {
+				continue
+			}
+			id, err := fileIdentity(fdPath)
+			if err != nil {
+				continue
+			}
+			item := files[id]
+			if item == nil {
+				info, statErr := os.Stat(fdPath)
+				if statErr != nil {
+					continue
+				}
+				item = &retained{file: DeletedFile{Path: strings.TrimSuffix(target, " (deleted)"), Size: info.Size()}}
+				files[id] = item
+			}
+			item.file.Writers = append(item.file.Writers, writer)
+		}
+	}
+	result := make([]DeletedFile, 0, len(files))
+	for _, item := range files {
+		result = append(result, item.file)
+	}
+	return result
+}
+
+type identity struct {
+	device uint64
+	inode  uint64
+}
+
+func fileIdentity(path string) (identity, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return identity{}, err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return identity{}, fmt.Errorf("unsupported file metadata")
+	}
+	return identity{device: uint64(stat.Dev), inode: uint64(stat.Ino)}, nil
+}
+
+func writerInfo(pid int) disk.Writer {
+	name := readFirstLine(filepath.Join("/proc", strconv.Itoa(pid), "comm"))
+	exe, _ := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "exe"))
+	uid := processUID(pid)
+	return disk.Writer{PID: pid, Process: name, Exe: exe, UID: uid}
+}
+
+func processUID(pid int) string {
+	file, err := os.Open(filepath.Join("/proc", strconv.Itoa(pid), "status"))
+	if err != nil {
+		return "?"
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 2 && fields[0] == "Uid:" {
+			return fields[1]
+		}
+	}
+	return "?"
+}
+
+func readFirstLine(path string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return "?"
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	if scanner.Scan() {
+		return scanner.Text()
+	}
+	return "?"
+}
