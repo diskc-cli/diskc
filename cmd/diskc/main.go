@@ -15,12 +15,14 @@ import (
 
 func main() {
 	var (
-		top     int
-		depth   int
-		sample  = 3 * time.Second
-		deleted bool
-		jsonOut bool
-		all     bool
+		top      int
+		depth    int
+		sample   = 3 * time.Second
+		deleted  bool
+		jsonOut  bool
+		all      bool
+		watch    bool
+		interval = 3 * time.Second
 	)
 	flag.IntVar(&top, "top", 20, "number of large files to report")
 	flag.IntVar(&depth, "depth", 4, "maximum directory depth to scan")
@@ -28,6 +30,8 @@ func main() {
 	flag.BoolVar(&deleted, "deleted", false, "include deleted files still held open by processes")
 	flag.BoolVar(&jsonOut, "json", false, "emit machine-readable JSON")
 	flag.BoolVar(&all, "all", false, "inspect all mounted physical filesystems")
+	flag.BoolVar(&watch, "watch", false, "refresh the report continuously until interrupted")
+	flag.DurationVar(&interval, "interval", interval, "watch refresh interval, for example 3s")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: diskc [path] [flags]\n\nFind what is filling a Linux filesystem.\n\nFlags:\n")
 		flag.PrintDefaults()
@@ -37,23 +41,43 @@ func main() {
 		os.Exit(2)
 	}
 
-	if top < 1 || depth < 0 || sample < 0 {
-		fmt.Fprintln(os.Stderr, "diskc: top must be positive; depth and sample cannot be negative")
+	if top < 1 || depth < 0 || sample < 0 || interval <= 0 {
+		fmt.Fprintln(os.Stderr, "diskc: top must be positive; depth and sample must be non-negative; interval must be positive")
 		os.Exit(2)
 	}
 	roots := make([]string, 0, flag.NArg()+1)
 	for index := 0; index < flag.NArg(); index++ {
 		roots = append(roots, flag.Arg(index))
 	}
+	if len(roots) == 0 {
+		roots = append(roots, "/")
+	}
+	if watch {
+		for {
+			started := time.Now()
+			if !jsonOut {
+				fmt.Fprint(os.Stdout, "\033[H\033[2J")
+			}
+			if err := refresh(os.Stdout, roots, all, top, depth, sample, deleted, jsonOut); err != nil {
+				fatal(err)
+			}
+			if remaining := interval - time.Since(started); remaining > 0 {
+				time.Sleep(remaining)
+			}
+		}
+	}
+	if err := refresh(os.Stdout, roots, all, top, depth, sample, deleted, jsonOut); err != nil {
+		fatal(err)
+	}
+}
+
+func refresh(writer *os.File, roots []string, all bool, top, depth int, sample time.Duration, deleted, jsonOut bool) error {
 	if all {
 		mounts, err := mount.All()
 		if err != nil {
-			fatal(err)
+			return err
 		}
-		roots = append(roots, mounts...)
-	}
-	if len(roots) == 0 {
-		roots = append(roots, "/")
+		roots = append(append([]string{}, roots...), mounts...)
 	}
 	outputs := make([]report.Data, 0, len(roots))
 	for _, root := range unique(roots) {
@@ -81,11 +105,9 @@ func main() {
 		outputs = append(outputs, report.Data{Filesystem: filesystem, Files: files, Directories: directories, Deleted: openDeleted, Warnings: warnings})
 	}
 	if len(outputs) == 0 {
-		fatal(fmt.Errorf("no filesystems could be inspected"))
+		return fmt.Errorf("no filesystems could be inspected")
 	}
-	if err := report.PrintMany(os.Stdout, outputs, jsonOut); err != nil {
-		fatal(err)
-	}
+	return report.PrintMany(writer, outputs, jsonOut)
 }
 
 func reorderArgs(args []string) []string {

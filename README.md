@@ -33,6 +33,17 @@ The binary does not need installation or root privileges:
 ./diskc /var --sample 5s --deleted
 ```
 
+Continuously refresh the report until interrupted with `Ctrl-C`:
+
+```bash
+./diskc -watch
+./diskc --watch --interval 5s /data
+```
+
+Watch mode clears the terminal and reruns the scan, growth sample, writer attribution, and deleted-open check on every refresh. The default refresh interval is three seconds between refresh starts; if a scan takes longer, the next refresh starts immediately.
+
+With `--watch --json`, each refresh is emitted as a separate JSON document without terminal-control sequences.
+
 For process attribution, run as the same user that owns the processes when possible. Linux `/proc` permissions may hide other users' processes from an unprivileged account. `diskc` never elevates privileges.
 
 ## Homebrew
@@ -163,6 +174,8 @@ Example shape:
 --deleted           include deleted files held open by processes
 --json              emit machine-readable JSON
 --all               inspect all mounted physical filesystems
+--watch             refresh continuously until interrupted
+--interval DURATION watch refresh interval (default: 3s)
 ```
 
 ## Development
