@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/diskc/diskc/internal/database"
 	"github.com/diskc/diskc/internal/disk"
 	"github.com/diskc/diskc/internal/health"
 	"github.com/diskc/diskc/internal/mount"
@@ -15,6 +16,12 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "db" {
+		if err := database.Run(os.Args[2:]); err != nil {
+			fatal(err)
+		}
+		return
+	}
 	var (
 		top      int
 		depth    int

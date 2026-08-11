@@ -3,11 +3,10 @@ package report
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-
 	"github.com/diskc/diskc/internal/disk"
 	"github.com/diskc/diskc/internal/health"
 	"github.com/diskc/diskc/internal/proc"
+	"io"
 )
 
 type Data struct {

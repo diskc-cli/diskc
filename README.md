@@ -57,6 +57,16 @@ System diagnostics
 
 ## Common Commands
 
+Inspect database configuration and database-related disk usage:
+
+```bash
+./diskc db
+./diskc db --sample 5s
+./diskc db --json
+```
+
+`diskc db` discovers PostgreSQL, MySQL/MariaDB, Redis, ClickHouse, and MongoDB from Linux process names, common configuration files, and standard data directories. It reports configuration paths, relevant storage settings, data paths, database processes, filesystem pressure, large database files, and growth rates. It does not connect to the database or modify any data.
+
 Inspect a directory or filesystem:
 
 ```bash
