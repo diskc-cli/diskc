@@ -36,11 +36,12 @@ type Directory struct {
 }
 
 type Writer struct {
-	PID     int    `json:"pid"`
-	Process string `json:"process"`
-	Exe     string `json:"exe"`
-	UID     string `json:"uid"`
-	Service string `json:"service,omitempty"`
+	PID       int    `json:"pid"`
+	Process   string `json:"process"`
+	Exe       string `json:"exe"`
+	UID       string `json:"uid"`
+	Service   string `json:"service,omitempty"`
+	Container string `json:"container,omitempty"`
 }
 
 func FilesystemUsage(path string) (Filesystem, error) {
@@ -120,9 +121,6 @@ func Scan(root string, device uint64, maxDepth, limit int) ([]File, []Directory,
 		return nil, nil, warnings, err
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Size > files[j].Size })
-	if len(files) > limit {
-		files = files[:limit]
-	}
 	directories := make([]Directory, 0, len(directorySizes))
 	for path, size := range directorySizes {
 		directories = append(directories, Directory{Path: path, Size: size})
@@ -132,6 +130,25 @@ func Scan(root string, device uint64, maxDepth, limit int) ([]File, []Directory,
 		directories = directories[:limit]
 	}
 	return files, directories, warnings, nil
+}
+
+func SelectReportFiles(files []File, limit int) ([]File, []File) {
+	largest := append([]File(nil), files...)
+	sort.Slice(largest, func(i, j int) bool { return largest[i].Size > largest[j].Size })
+	if len(largest) > limit {
+		largest = largest[:limit]
+	}
+	growing := make([]File, 0, len(files))
+	for _, file := range files {
+		if file.Growth > 0 {
+			growing = append(growing, file)
+		}
+	}
+	sort.Slice(growing, func(i, j int) bool { return growing[i].Growth > growing[j].Growth })
+	if len(growing) > limit {
+		growing = growing[:limit]
+	}
+	return largest, growing
 }
 
 func MeasureGrowth(files []File, interval time.Duration) error {

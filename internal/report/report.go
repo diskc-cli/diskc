@@ -6,14 +6,17 @@ import (
 	"io"
 
 	"github.com/diskc/diskc/internal/disk"
+	"github.com/diskc/diskc/internal/health"
 	"github.com/diskc/diskc/internal/proc"
 )
 
 type Data struct {
 	Filesystem  disk.Filesystem    `json:"filesystem"`
 	Files       []disk.File        `json:"files"`
+	Growing     []disk.File        `json:"fastest_growing,omitempty"`
 	Directories []disk.Directory   `json:"directories"`
 	Deleted     []proc.DeletedFile `json:"deleted,omitempty"`
+	Findings    []health.Finding   `json:"diagnostics,omitempty"`
 	Warnings    []string           `json:"warnings,omitempty"`
 }
 
@@ -78,9 +81,15 @@ func text(writer io.Writer, data Data) error {
 			fmt.Fprintf(writer, "%10s  %s\n", formatBytes(uint64(directory.Size)), directory.Path)
 		}
 	}
-	if hasWriters(data.Files) {
+	if len(data.Growing) > 0 {
+		fmt.Fprintln(writer, "\nFastest growth")
+		for _, file := range data.Growing {
+			fmt.Fprintf(writer, "%10s/s  %s  (%s)\n", formatBytes(uint64(file.Growth)), file.Path, file.Kind)
+		}
+	}
+	if hasWriters(allFiles(data)) {
 		fmt.Fprintln(writer, "\nActive writers")
-		for _, file := range data.Files {
+		for _, file := range allFiles(data) {
 			for _, processWriter := range file.Writers {
 				fmt.Fprintf(writer, "%s\n└─ PID %d  %s\n", file.Path, processWriter.PID, processWriter.Process)
 				if processWriter.Exe != "" {
@@ -89,12 +98,15 @@ func text(writer io.Writer, data Data) error {
 				if processWriter.Service != "" {
 					fmt.Fprintf(writer, "   └─ service  %s\n", processWriter.Service)
 				}
+				if processWriter.Container != "" {
+					fmt.Fprintf(writer, "   └─ container %s\n", processWriter.Container)
+				}
 			}
 		}
 	}
-	if hasGrowth(data.Files) {
+	if hasGrowth(data.Growing) {
 		fmt.Fprintln(writer, "\nPotential issues")
-		for _, file := range data.Files {
+		for _, file := range data.Growing {
 			if file.Growth <= 0 {
 				continue
 			}
@@ -102,6 +114,12 @@ func text(writer io.Writer, data Data) error {
 			if data.Filesystem.FullInSeconds > 0 {
 				fmt.Fprintf(writer, "└─ filesystem full in ~%s\n", duration(data.Filesystem.FullInSeconds))
 			}
+		}
+	}
+	if len(data.Findings) > 0 {
+		fmt.Fprintln(writer, "\nSystem diagnostics")
+		for _, finding := range data.Findings {
+			fmt.Fprintf(writer, "[%s] %s\n", finding.Severity, finding.Message)
 		}
 	}
 	if len(data.Deleted) > 0 {
@@ -121,6 +139,20 @@ func text(writer io.Writer, data Data) error {
 		}
 	}
 	return nil
+}
+
+func allFiles(data Data) []disk.File {
+	files := make([]disk.File, 0, len(data.Files)+len(data.Growing))
+	seen := make(map[string]bool, len(data.Files)+len(data.Growing))
+	for _, group := range [][]disk.File{data.Files, data.Growing} {
+		for _, file := range group {
+			if !seen[file.Path] {
+				files = append(files, file)
+				seen[file.Path] = true
+			}
+		}
+	}
+	return files
 }
 
 func formatBytes(value uint64) string {

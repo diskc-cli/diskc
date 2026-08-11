@@ -13,7 +13,7 @@ go build -o diskc ./cmd/diskc
 ./diskc
 ```
 
-The default command scans `/`, samples growth for three seconds, and reports filesystem pressure, largest files/directories, growth rate, estimated time-to-full, and writable processes. Add `--deleted` to include deleted-open file detection.
+The default command scans `/`, samples files and device activity for three seconds, and reports byte pressure, inode pressure, largest files/directories, fastest-growing files, estimated time-to-full, writable processes, and Linux storage diagnostics. Add `--deleted` to include deleted-open file detection.
 
 `diskc` is read-only and does not require `sudo` or root privileges. Linux `/proc` permissions may limit process details for other users.
 
@@ -40,7 +40,20 @@ Potential issues
 /var/log/payment/app.log
 ├─ rapid growth: 65.5 GB/hour
 └─ filesystem full in ~35 minutes
+
+System diagnostics
+[info] nvme0n1: 18.4% busy, 2.1 MB/s read, 38.7 MB/s written, 40 read IOPS, 310 write IOPS
 ```
+
+## What `diskc` checks automatically
+
+- **Inode exhaustion:** reports inode utilization alongside byte utilization, so a filesystem full of tiny files is visible even when capacity remains.
+- **Small, fast-growing files:** samples every scanned regular file, then reports fastest growth separately from largest files.
+- **Disk I/O pressure:** samples the backing block device during the growth window and reports busy time, throughput, and IOPS when activity is observed. It also warns when Linux I/O pressure stall information is high.
+- **Mount and storage health:** flags read-only mounts, degraded Linux software RAID, container overlay filesystems, and Btrfs/ZFS copy-on-write filesystems where snapshots can consume capacity beyond ordinary file totals.
+- **Container context:** when Linux cgroups expose a Docker, containerd, or CRI-O container ID for a writer, includes it with the process attribution.
+
+`diskc` identifies copy-on-write and overlay risks but does not yet measure individual snapshot, image, or volume usage. It does not replace device-vendor SMART/NVMe tooling.
 
 ## Common Commands
 

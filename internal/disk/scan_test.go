@@ -56,3 +56,18 @@ func TestMeasureGrowth(t *testing.T) {
 		t.Fatalf("expected positive growth, got %f", files[0].Growth)
 	}
 }
+
+func TestSelectReportFilesIncludesFastSmallFile(t *testing.T) {
+	files := []File{
+		{Path: "/large.log", Size: 1000},
+		{Path: "/medium.log", Size: 500},
+		{Path: "/fast-small.log", Size: 10, Growth: 200},
+	}
+	largest, growing := SelectReportFiles(files, 1)
+	if len(largest) != 1 || largest[0].Path != "/large.log" {
+		t.Fatalf("unexpected largest files: %+v", largest)
+	}
+	if len(growing) != 1 || growing[0].Path != "/fast-small.log" {
+		t.Fatalf("unexpected growing files: %+v", growing)
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/diskc/diskc/internal/disk"
+	"github.com/diskc/diskc/internal/health"
 	"github.com/diskc/diskc/internal/mount"
 	"github.com/diskc/diskc/internal/proc"
 	"github.com/diskc/diskc/internal/report"
@@ -91,18 +92,22 @@ func refresh(writer *os.File, roots []string, all bool, top, depth int, sample t
 			fmt.Fprintf(os.Stderr, "diskc: skipping %s: %v\n", root, err)
 			continue
 		}
+		healthSnapshot := health.TakeSnapshot(filesystem.Device)
 		if sample > 0 {
 			if err := disk.MeasureGrowth(files, sample); err != nil {
 				warnings = append(warnings, err.Error())
 			}
 		}
 		disk.UpdateTrend(files, &filesystem)
-		proc.AttributeWriters(files)
+		largest, growing := disk.SelectReportFiles(files, top)
+		proc.AttributeWriters(largest)
+		proc.AttributeWriters(growing)
 		var openDeleted []proc.DeletedFile
 		if deleted {
 			openDeleted = proc.DeletedFiles()
 		}
-		outputs = append(outputs, report.Data{Filesystem: filesystem, Files: files, Directories: directories, Deleted: openDeleted, Warnings: warnings})
+		findings := health.Findings(root, filesystem.Device, healthSnapshot, sample.Seconds())
+		outputs = append(outputs, report.Data{Filesystem: filesystem, Files: largest, Growing: growing, Directories: directories, Deleted: openDeleted, Findings: findings, Warnings: warnings})
 	}
 	if len(outputs) == 0 {
 		return fmt.Errorf("no filesystems could be inspected")

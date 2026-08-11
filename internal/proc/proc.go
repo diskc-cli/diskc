@@ -131,7 +131,7 @@ func writerInfo(pid int) disk.Writer {
 	name := readFirstLine(filepath.Join("/proc", strconv.Itoa(pid), "comm"))
 	exe, _ := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "exe"))
 	uid := processUID(pid)
-	return disk.Writer{PID: pid, Process: name, Exe: exe, UID: uid, Service: serviceName(pid)}
+	return disk.Writer{PID: pid, Process: name, Exe: exe, UID: uid, Service: serviceName(pid), Container: containerID(pid)}
 }
 
 func serviceName(pid int) string {
@@ -149,6 +149,36 @@ func serviceName(pid int) string {
 		}
 	}
 	return ""
+}
+
+func containerID(pid int) string {
+	file, err := os.Open(filepath.Join("/proc", strconv.Itoa(pid), "cgroup"))
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		for _, part := range strings.Split(scanner.Text(), "/") {
+			candidate := strings.TrimSuffix(part, ".scope")
+			candidate = strings.TrimPrefix(candidate, "docker-")
+			candidate = strings.TrimPrefix(candidate, "cri-containerd-")
+			candidate = strings.TrimPrefix(candidate, "crio-")
+			if len(candidate) >= 12 && isHex(candidate) {
+				return candidate
+			}
+		}
+	}
+	return ""
+}
+
+func isHex(value string) bool {
+	for _, character := range value {
+		if !(character >= '0' && character <= '9') && !(character >= 'a' && character <= 'f') && !(character >= 'A' && character <= 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 func writableDescriptor(pid int, fd string) bool {
