@@ -94,6 +94,44 @@ Discover physical filesystems automatically:
 
 Virtual filesystems such as `/proc`, `/sys`, `tmpfs`, and cgroups are excluded. Separate filesystem results are never mixed.
 
+Inspect Docker storage on the host:
+
+```bash
+./diskc docker
+./diskc docker --sample 5s --top 50
+./diskc docker --json > docker-disk-report.json
+```
+
+`diskc docker` checks common rootful and rootless Docker locations, including Docker's `data-root`, containerd storage, Docker logs, and BuildKit cache. It reports configuration and socket paths, Docker processes, filesystem pressure, largest Docker files/directories, and growth rate. It reads local files and `/proc`; it does not call the Docker API, connect to containers, delete data, or require root.
+
+Example Docker output:
+
+```text
+Docker storage
+Runtime: docker
+Config: /etc/docker/daemon.json
+Data root: /var/lib/docker
+Socket: /var/run/docker.sock
+Processes
+  PID 1842  dockerd  /usr/bin/dockerd
+  PID 1764  containerd  /usr/bin/containerd
+
+docker data root: /var/lib/docker
+  Used: 86.7%  Inodes: 31.2%  Free: 42.8 GB
+  Trend: +6.4 GB/hour
+  Largest files
+       31.4 GB  /var/lib/docker/overlay2/.../json.log  ↑ 1.8 MB/s
+       18.7 GB  /var/lib/docker/containers/.../container-json.log
+  Largest directories
+       96.2 GB  /var/lib/docker/overlay2
+       22.5 GB  /var/lib/docker/containers
+
+BuildKit cache: /var/lib/buildkit
+  Used: 43.1%  Inodes: 12.4%  Free: 210.0 GB
+```
+
+If Docker is not installed or its storage is elsewhere, the command prints `No Docker storage paths found.`. Configure a custom Docker `data-root` in `/etc/docker/daemon.json`; `diskc docker` will report that path automatically.
+
 Watch continuously until `Ctrl-C`:
 
 ```bash

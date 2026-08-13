@@ -9,6 +9,7 @@ import (
 
 	"github.com/diskc/diskc/internal/database"
 	"github.com/diskc/diskc/internal/disk"
+	"github.com/diskc/diskc/internal/docker"
 	"github.com/diskc/diskc/internal/health"
 	"github.com/diskc/diskc/internal/mount"
 	"github.com/diskc/diskc/internal/proc"
@@ -18,6 +19,12 @@ import (
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "db" {
 		if err := database.Run(os.Args[2:]); err != nil {
+			fatal(err)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "docker" {
+		if err := docker.Run(os.Args[2:]); err != nil {
 			fatal(err)
 		}
 		return
@@ -41,7 +48,7 @@ func main() {
 	flag.BoolVar(&watch, "watch", false, "refresh the report continuously until interrupted")
 	flag.DurationVar(&interval, "interval", interval, "watch refresh interval, for example 3s")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: diskc [path] [flags]\n\nFind what is filling a Linux filesystem.\n\nFlags:\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: diskc [path ...] [flags]\n       diskc db [flags]\n       diskc docker [flags]\n\nFind what is filling a Linux filesystem.\n\nFlags:\n")
 		flag.PrintDefaults()
 	}
 	args := reorderArgs(os.Args[1:])
